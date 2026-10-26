@@ -1,0 +1,4 @@
+{
+  "buildCommand": "node scripts/generate-env.js",
+  "outputDirectory": "."
+}
