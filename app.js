@@ -46,6 +46,39 @@ const api = {
   },
   async addStudy(e) { const { error } = await sb.from('study').insert(e); return error ? fail(error) : true; },
   async deleteStudy(id) { const { error } = await sb.from('study').delete().eq('id', id); return error ? fail(error) : true; },
+  async projects() {
+    if (!sb) return [];
+    const { data, error } = await sb.from('projects').select('*').order('created_at', { ascending: false });
+    if (error) { fail(error, 'Could not load projects: ' + error.message); return []; }
+    return data;
+  },
+  async project(id) {
+    if (!sb) return null;
+    const { data } = await sb.from('projects').select('*').eq('id', id).maybeSingle();
+    return data;
+  },
+  async saveProject(p) {
+    const { error } = p.id
+      ? await sb.from('projects').update(p).eq('id', p.id)
+      : await sb.from('projects').insert(p);
+    return error ? fail(error) : true;
+  },
+  async deleteProject(id) { const { error } = await sb.from('projects').delete().eq('id', id); return error ? fail(error) : true; },
+  async song() {
+    const fallback = normalizeSong(CFG.SONG || {});
+    if (!sb) return fallback;
+    const { data, error } = await sb.from('song').select('*').eq('id', 1).maybeSingle();
+    if (error) { console.error(error); return fallback; }
+    return data && data.title ? normalizeSong(data) : fallback;
+  },
+  async saveSong(s) {
+    const { error } = await sb.from('song').upsert({
+      id: 1, title: s.title, artist: s.artist, note: s.note, url: s.url,
+      lyrics: s.lyrics, credit_name: s.creditName, credit_url: s.creditUrl,
+      updated_at: new Date().toISOString()
+    });
+    return error ? fail(error) : true;
+  },
   async upload(file) {
     const blob = await resize(file);
     const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
@@ -75,6 +108,16 @@ function resize(file, max = 1400) {
 
 /* ---------- helpers ---------- */
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const safeUrl = u => /^(https?:|mailto:|#)/i.test(String(u || '').trim()) ? String(u).trim() : '';
+const normalizeSong = s => s && s.title ? {
+  title: s.title || '',
+  artist: s.artist || '',
+  note: s.note || '',
+  url: s.url || '',
+  lyrics: s.lyrics || '',
+  creditName: s.credit_name ?? s.creditName ?? s.lyricsCredit?.name ?? '',
+  creditUrl: s.credit_url ?? s.creditUrl ?? s.lyricsCredit?.url ?? ''
+} : null;
 const fmt = d => new Date(d + (String(d).length === 10 ? 'T00:00:00' : '')).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 const plain = md => md.replace(/```[\s\S]*?```/g, '').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/^[#>\-*\d.\s]+/gm, '').replace(/[*_`]/g, '');
 const excerpt = p => { const t = plain(p.md).trim().replace(/\s+/g, ' '); return t.slice(0, 120) + (t.length > 120 ? '…' : ''); };
@@ -133,13 +176,35 @@ const projectsSoon = `
 <div class="card soon"><div class="big"><span class="brush blue">coming soon</span></div>
 <p>coming soon ✿</p></div>`;
 
+const projectCard = p => {
+  const link = safeUrl(p.link);
+  return `
+<article class="card project-card fade" id="project-${esc(p.id)}">
+  ${p.image ? `<img class="project-img" src="${esc(p.image)}" alt="">` : ''}
+  <div class="project-body">
+    ${p.tag ? `<span class="tag">${esc(p.tag)}</span>` : ''}
+    <h3>${esc(p.title)}</h3>
+    ${p.description ? `<p>${esc(p.description)}</p>` : ''}
+    <div class="project-actions">
+      ${link ? `<a class="btn primary small" href="${esc(link)}" target="_blank" rel="noopener">view project ↗</a>` : ''}
+      ${isAdmin() && sb ? `<a class="btn small" href="#/project/${esc(p.id)}">edit</a>
+      <button class="btn small danger" type="button" onclick="delProject(${Number(p.id)})">delete</button>` : ''}
+    </div>
+  </div>
+</article>`;
+};
+
+const projectGrid = list => list.length
+  ? `<div class="grid">${list.map(projectCard).join('')}</div>`
+  : projectsSoon;
+
 const notConfigured = `<div class="card notice">Backend isn't connected yet — showing demo content. Follow <b>README.md</b> to connect Supabase.</div>`;
 
 
 const ytId = u => { const m = String(u || '').match(/(?:youtu\.be\/|[?&]v=|embed\/)([\w-]{11})/); return m ? m[1] : ''; };
 
-const songSection = () => {
-  const sg = CFG.SONG || {};
+const songSection = song => {
+  const sg = normalizeSong(song) || normalizeSong(CFG.SONG || {}) || {};
   if (!sg.title) return '';
   return `
   <section class="block" id="song">
@@ -177,35 +242,40 @@ const songBg = () => {
   </div>`;
 };
 
-function songPage() {
-  const sg = CFG.SONG || {};
-  if (!sg.title) return '<div class="empty">no song yet ✿</div>';
+function songPage(song) {
+  const sg = normalizeSong(song) || normalizeSong(CFG.SONG || {});
+  if (!sg || !sg.title) return '<div class="empty">no song yet ✿</div>';
   const id = sg.youtubeId || ytId(sg.url);
+  const link = safeUrl(sg.url);
+  const credit = safeUrl(sg.creditUrl);
   return songBg() + `
   <section class="block fade song-page">
-    <h1 class="sec-title"><span class="brush pink">soundtrack of this season</span></h1>
-    <p class="sec-sub">the song that sounds like where I am right now</p>
+    <div class="row"><div>
+      <h1 class="sec-title"><span class="brush pink">soundtrack of this season</span></h1>
+      <p class="sec-sub">the song that sounds like where I am right now</p>
+    </div>
+    ${isAdmin() && sb ? `<a class="btn small" href="#/song-edit" id="edit-song">edit song</a>` : ''}</div>
     <div class="song-layout">
       <div class="song-media">
-        ${id && location.protocol === 'file:' ? `<a class="video thumb-fallback" href="${esc(sg.url)}" target="_blank" rel="noopener" aria-label="watch ${esc(sg.title)} on YouTube"><img src="https://img.youtube.com/vi/${esc(id)}/hqdefault.jpg" alt=""><span class="play-badge">▶ watch on youtube</span></a><p class="hint" style="margin-top:8px">embedded player needs the site to run on http(s) — it works once deployed or via a local server.</p>`
+        ${id && location.protocol === 'file:' ? `<a class="video thumb-fallback" href="${esc(link)}" target="_blank" rel="noopener" aria-label="watch ${esc(sg.title)} on YouTube"><img src="https://img.youtube.com/vi/${esc(id)}/hqdefault.jpg" alt=""><span class="play-badge">▶ watch on youtube</span></a><p class="hint" style="margin-top:8px">embedded player needs the site to run on http(s) — it works once deployed or via a local server.</p>`
         : id ? `<div class="video"><iframe src="https://www.youtube.com/embed/${esc(id)}" title="${esc(sg.title)}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>`
-             : `<a class="btn primary" href="${esc(sg.url)}" target="_blank" rel="noopener">listen on youtube ↗</a>`}
+             : link ? `<a class="btn primary" href="${esc(link)}" target="_blank" rel="noopener">listen on youtube ↗</a>` : ''}
         <h2 class="song-title">${esc(sg.title)}</h2>
         <div class="artist">${esc(sg.artist)}</div>
         ${sg.note ? `<p class="song-note">“${esc(sg.note)}”</p>` : ''}
-        ${sg.url ? `<p style="margin-top:12px"><a class="yt" href="${esc(sg.url)}" target="_blank" rel="noopener">open on youtube ↗</a></p>` : ''}
+        ${link ? `<p style="margin-top:12px"><a class="yt" href="${esc(link)}" target="_blank" rel="noopener">open on youtube ↗</a></p>` : ''}
       </div>
       <div class="lyrics">
         <h3>lyrics</h3>
         ${sg.lyrics ? `<div class="lyrics-text">${esc(sg.lyrics)}</div>` : '<p class="hint">lyrics coming soon ✿</p>'}
-        ${sg.lyrics && sg.lyricsCredit ? `<p class="credit">lyrics & translation by <a href="${esc(sg.lyricsCredit.url)}" target="_blank" rel="noopener">${esc(sg.lyricsCredit.name)} ↗</a></p>` : ''}
+        ${sg.lyrics && sg.creditName ? `<p class="credit">lyrics & translation by ${credit ? `<a href="${esc(credit)}" target="_blank" rel="noopener">${esc(sg.creditName)} ↗</a>` : esc(sg.creditName)}</p>` : ''}
       </div>
     </div>
   </section>`;
 }
 
 /* ---------- views ---------- */
-function home({ posts, study: logs }) {
+function home({ posts, study: logs, song, projects: projectList }) {
   return `
   ${CONFIGURED ? '' : notConfigured}
   <section class="hero fade">
@@ -221,7 +291,9 @@ function home({ posts, study: logs }) {
   </section>
   ${about()}
   <section class="block" id="projects">
-    <h2 class="sec-title">projects</h2><p class="sec-sub">things I'm building</p>${projectsSoon}
+    <div class="row"><div><h2 class="sec-title">projects</h2><p class="sec-sub">things I'm building</p></div>
+    ${isAdmin() && sb ? '<a class="btn small" href="#/project/new" id="home-add-project">+ add project</a>' : ''}</div>
+    ${projectGrid(projectList.slice(0, 3))}
   </section>
   ${studyPreview(logs)}
   <section class="block">
@@ -229,7 +301,7 @@ function home({ posts, study: logs }) {
     <a class="btn small" href="#/blog" id="all-posts">all posts →</a></div>
     ${posts.length ? `<div class="grid">${posts.slice(0, 3).map(postCard).join('')}</div>` : '<div class="empty">no posts yet ✿</div>'}
   </section>
-  ${songSection()}`;
+  ${songSection(song)}`;
 }
 
 function studyPreview(all) {
@@ -257,8 +329,14 @@ function studyPreview(all) {
   </section>`;
 }
 
-function projects() {
-  return `<section class="block fade"><h1 class="sec-title">projects</h1><p class="sec-sub">things I'm building</p>${projectsSoon}</section>`;
+function projectsView(list) {
+  return `
+  <section class="block fade">
+    <div class="row"><div><h1 class="sec-title">projects</h1><p class="sec-sub">things I'm building</p></div>
+    ${isAdmin() && sb ? '<a class="btn primary small" href="#/project/new" id="projects-add">+ add project</a>' : ''}</div>
+    ${CONFIGURED ? '' : notConfigured}
+    ${projectGrid(list)}
+  </section>`;
 }
 
 function about() {
@@ -420,6 +498,113 @@ async function delPost(id) {
   if (await api.deletePost(id)) location.hash = '#/blog';
 }
 
+/* ---------- projects (public read, admin write) ---------- */
+let projectDraft = null;
+
+function projectEditor(existing) {
+  projectDraft = existing ? { ...existing } : { title: '', description: '', link: '', image: '', tag: '' };
+  return `
+  <div class="editor fade">
+    <h1 class="sec-title"><span class="brush blue">${existing ? 'edit project' : 'new project'}</span></h1>
+    <label for="p-title">title</label>
+    <input type="text" id="p-title" placeholder="Project name" />
+    <div class="frow2">
+      <div><label for="p-tag">tag</label><input type="text" id="p-tag" placeholder="backend, tool…" /></div>
+      <div><label for="p-link">project link</label><input type="text" id="p-link" placeholder="https://github.com/…" /></div>
+    </div>
+    <label for="p-description">description</label>
+    <textarea id="p-description" placeholder="What does this project do?"></textarea>
+    <label>project image (optional)</label>
+    <input type="file" accept="image/*" id="p-image" />
+    <div id="p-image-prev"></div>
+    <div class="cta"><button class="btn primary" id="p-save" type="button">${existing ? 'save changes' : 'add project'}</button>
+    <a class="btn" href="#/projects">cancel</a></div>
+  </div>`;
+}
+
+function bindProjectEditor() {
+  const $ = id => document.getElementById(id);
+  $('p-title').value = projectDraft.title || '';
+  $('p-tag').value = projectDraft.tag || '';
+  $('p-link').value = projectDraft.link || '';
+  $('p-description').value = projectDraft.description || '';
+  const prev = () => $('p-image-prev').innerHTML = projectDraft.image
+    ? `<img src="${esc(projectDraft.image)}" style="max-height:200px;border-radius:12px;margin-top:8px" alt="">` : '';
+  prev();
+  $('p-title').oninput = e => projectDraft.title = e.target.value;
+  $('p-tag').oninput = e => projectDraft.tag = e.target.value;
+  $('p-link').oninput = e => projectDraft.link = e.target.value;
+  $('p-description').oninput = e => projectDraft.description = e.target.value;
+  $('p-image').onchange = async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const u = await api.upload(file);
+    if (u) { projectDraft.image = u; prev(); }
+  };
+  $('p-save').onclick = async () => {
+    if (!projectDraft.title.trim()) return alert('Please add a project title ✿');
+    const { created_at, ...p } = projectDraft;
+    p.id = p.id ? +p.id : undefined;
+    if (!p.id) delete p.id;
+    const btn = $('p-save'); btn.disabled = true; btn.textContent = 'saving…';
+    if (await api.saveProject(p)) location.hash = '#/projects';
+    else { btn.disabled = false; btn.textContent = 'save'; }
+  };
+}
+
+async function delProject(id) {
+  if (!confirm('Delete this project?')) return;
+  if (await api.deleteProject(id)) route();
+}
+
+/* ---------- song (public read, admin write) ---------- */
+let songDraft = null;
+
+function songEditor(song) {
+  const sg = normalizeSong(song || CFG.SONG || {}) || {};
+  songDraft = { ...sg };
+  return `
+  <div class="editor fade">
+    <h1 class="sec-title"><span class="brush pink">edit song</span></h1>
+    <div class="frow2">
+      <div><label for="sg-title">title</label><input type="text" id="sg-title" placeholder="Song title" /></div>
+      <div><label for="sg-artist">artist</label><input type="text" id="sg-artist" placeholder="Artist" /></div>
+    </div>
+    <label for="sg-url">song link</label>
+    <input type="text" id="sg-url" placeholder="https://youtu.be/…" />
+    <label for="sg-note">note (optional)</label>
+    <input type="text" id="sg-note" placeholder="A line about this song" />
+    <label for="sg-lyrics">lyrics</label>
+    <textarea id="sg-lyrics" placeholder="Paste the lyrics here…"></textarea>
+    <div class="frow2">
+      <div><label for="sg-credit-name">lyrics credit name</label><input type="text" id="sg-credit-name" placeholder="kazelyrics" /></div>
+      <div><label for="sg-credit-url">lyrics credit link</label><input type="text" id="sg-credit-url" placeholder="https://…" /></div>
+    </div>
+    <div class="cta"><button class="btn primary" id="sg-save" type="button">save song</button>
+    <a class="btn" href="#/song">cancel</a></div>
+  </div>`;
+}
+
+function bindSongEditor() {
+  const $ = id => document.getElementById(id);
+  const fields = {
+    'sg-title': 'title', 'sg-artist': 'artist', 'sg-url': 'url',
+    'sg-note': 'note', 'sg-lyrics': 'lyrics',
+    'sg-credit-name': 'creditName', 'sg-credit-url': 'creditUrl'
+  };
+  Object.entries(fields).forEach(([id, key]) => {
+    $(id).value = songDraft[key] || '';
+    $(id).oninput = e => songDraft[key] = e.target.value;
+  });
+  $('sg-save').onclick = async () => {
+    if (!songDraft.title.trim()) return alert('Please add a song title ✿');
+    const btn = $('sg-save'); btn.disabled = true; btn.textContent = 'saving…';
+    if (await api.saveSong(songDraft)) location.hash = '#/song';
+    else { btn.disabled = false; btn.textContent = 'save song'; }
+  };
+}
+
 /* ---------- study log (public read, admin write) ---------- */
 let studyData = [];
 const cal = { y: new Date().getFullYear(), m: new Date().getMonth(), sel: null };
@@ -471,6 +656,8 @@ function study() {
           <div class="meta">${e.tag ? `<span class="tag">${esc(e.tag)}</span>` : ''}${e.mins ? e.mins + ' min' : ''}</div>
           <h3>${esc(e.topic)}</h3>
           ${e.notes ? `<p>${esc(e.notes)}</p>` : ''}
+          ${e.image ? `<img class="entry-img" src="${esc(e.image)}" alt="">` : ''}
+          ${safeUrl(e.link) ? `<p><a class="yt" href="${esc(safeUrl(e.link))}" target="_blank" rel="noopener">open link ↗</a></p>` : ''}
           ${admin ? `<button class="x" title="delete" onclick="delStudy(${e.id})">✕</button>` : ''}
         </div>`).join('')}</div></div>`).join('');
   const empty = cal.sel ? `<div class="empty">no log on ${fmt(cal.sel)}</div>` : '<div class="empty">nothing logged yet ✿</div>';
@@ -480,7 +667,11 @@ function study() {
         <input type="text" id="s-topic" placeholder="what did you learn${cal.sel ? '' : ' today'}?" required />
         <input type="date" id="s-date" value="${cal.sel || today()}" />
       </div>
-      <textarea id="s-notes" placeholder="notes, key takeaways, links… (optional)"></textarea>
+      <textarea id="s-notes" placeholder="description / notes (optional)"></textarea>
+      <div class="frow">
+        <input type="text" id="s-link" placeholder="link (optional) https://…" />
+        <input type="file" id="s-image" accept="image/*" />
+      </div>
       <div class="frow">
         <input type="text" id="s-tag" placeholder="tag (e.g. postgres)" />
         <input type="number" id="s-mins" min="0" placeholder="minutes" />
@@ -525,7 +716,9 @@ function bindStudy() {
     e.preventDefault();
     const v = id => document.getElementById(id).value.trim();
     if (!v('s-topic')) return;
-    const row = { date: v('s-date') || today(), topic: v('s-topic'), notes: v('s-notes'), tag: v('s-tag'), mins: v('s-mins') ? +v('s-mins') : null };
+    const row = { date: v('s-date') || today(), topic: v('s-topic'), notes: v('s-notes'), link: v('s-link'), image: '', tag: v('s-tag'), mins: v('s-mins') ? +v('s-mins') : null };
+    const f = document.getElementById('s-image').files[0];
+    if (f) { const u = await api.upload(f); if (!u) return; row.image = u; }
     if (await api.addStudy(row)) { studyData = await api.study(); refreshStudy(); }
   };
   const shift = n => { const d = new Date(cal.y, cal.m + n, 1); cal.y = d.getFullYear(); cal.m = d.getMonth(); refreshStudy(); };
@@ -557,6 +750,8 @@ function admin() {
   else if (isAdmin()) body = `
     <p class="sec-sub">signed in as ${esc(session.user.email)}</p>
     <div class="cta"><a class="btn primary" href="#/write" id="adm-write">+ new post</a>
+      <a class="btn" href="#/project/new" id="adm-project">+ new project</a>
+      <a class="btn" href="#/song-edit" id="adm-song">edit song</a>
       <a class="btn" href="#/study" id="adm-study">study log</a>
       <button class="btn" id="adm-logout" onclick="logout()">sign out</button></div>`;
   else if (session) body = `
@@ -578,8 +773,20 @@ async function route() {
   const [, page, arg] = (location.hash || '#/').slice(1).split('/');
   let html, nav = page || 'home', after = null;
   switch (page) {
-    case 'projects': html = projects(); break;
-    case 'song': html = songPage(); break;
+    case 'projects': html = projectsView(await api.projects()); break;
+    case 'project': {
+      nav = 'projects';
+      if (isAdmin() && sb) {
+        const p = arg === 'new' ? null : await api.project(arg);
+        html = arg === 'new' || p ? projectEditor(p) : '<div class="empty">project not found</div>';
+        if (arg === 'new' || p) after = bindProjectEditor;
+      } else html = needAdmin;
+      break;
+    }
+    case 'song': nav = 'song'; html = songPage(await api.song()); break;
+    case 'song-edit':
+      if (isAdmin() && sb) { html = songEditor(await api.song()); after = bindSongEditor; } else html = needAdmin;
+      break;
     case 'admin': html = admin(); nav = ''; break;
     case 'study':
       studyData = await api.study(); html = study(); after = bindStudy; break;
@@ -593,8 +800,8 @@ async function route() {
       break;
     }
     default: {
-      const [posts, logs] = await Promise.all([api.posts(), api.study()]);
-      html = home({ posts, study: logs }); nav = 'home';
+      const [posts, logs, song, projects] = await Promise.all([api.posts(), api.study(), api.song(), api.projects()]);
+      html = home({ posts, study: logs, song, projects }); nav = 'home';
     }
   }
   if (token !== routeToken) return; // a newer navigation won
