@@ -1,0 +1,10 @@
+# Local environment
+.env
+.env.local
+env.js
+
+# Vercel CLI
+.vercel
+
+# macOS
+.DS_Store

@@ -1,10 +1,12 @@
-/* Supabase settings — fill these in (see README.md).
+/* Supabase values come from env.js, generated from .env or Vercel env vars.
+   Run `node scripts/generate-env.js` before serving locally (see README.md).
    The anon key is safe to expose: Row Level Security in supabase/schema.sql
    makes the data read-only for everyone except ADMIN_EMAIL. */
+const ENV = window.ENV || {};
 window.CONFIG = {
-  SUPABASE_URL: 'https://YOUR-PROJECT.supabase.co',
-  SUPABASE_ANON_KEY: 'YOUR-ANON-KEY',
-  ADMIN_EMAIL: 'you@example.com', // the Google/GitHub account email allowed to edit
+  SUPABASE_URL: ENV.SUPABASE_URL || '',
+  SUPABASE_ANON_KEY: ENV.SUPABASE_ANON_KEY || '',
+  ADMIN_EMAIL: ENV.ADMIN_EMAIL || '', // the Google/GitHub account email allowed to edit
   // current song in my season — change these anytime
   SONG: {
     title: 'Surges',
