@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Amanda Farliana Setyasari — Software Engineer</title>
+  <meta name="description"
+    content="Personal website of Amanda Farliana Setyasari, a software engineer with a backend interest. Projects and blog." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Gaegu:wght@400;700&family=Inter:wght@400;500;600&family=Lora:ital,wght@0,400;0,600;1,400&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="style.css?v=6" />
+</head>
+
+<body>
+  <!-- SVG filter that roughens edges so shapes look hand painted -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <filter id="rough" x="-10%" y="-30%" width="120%" height="160%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.035 0.09" numOctaves="3" seed="4" result="n" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="9" />
+      </filter>
+      <filter id="rough2" x="-10%" y="-30%" width="120%" height="160%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.05 0.12" numOctaves="2" seed="11" result="n" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="6" />
+      </filter>
+      <linearGradient id="gBP" x1="0" x2="1">
+        <stop offset="0" stop-color="#a78bfa" />
+        <stop offset="1" stop-color="#7aa7ff" />
+      </linearGradient>
+      <linearGradient id="gHeart" x1="0" x2="1" y1="0" y2="1">
+        <stop offset="0" stop-color="#ff7ab8" />
+        <stop offset="1" stop-color="#8b5cf6" />
+      </linearGradient>
+      <linearGradient id="gPK" x1="0" x2="1">
+        <stop offset="0" stop-color="#ff9ccf" />
+        <stop offset="1" stop-color="#c9a4ff" />
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+
+  <header class="nav">
+    <a href="#/" class="logo" id="nav-logo">manda<span>.</span></a>
+    <nav>
+      <a href="#/" data-nav="home" id="nav-home">home</a>
+      <a href="#/projects" data-nav="projects" id="nav-projects">projects</a>
+      <a href="#/blog" data-nav="blog" id="nav-blog">blog</a>
+      <a href="#/study" data-nav="study" id="nav-study">study log</a>
+      <a href="#/song" data-nav="song" id="nav-song">song</a>
+    </nav>
+  </header>
+
+  <main id="app"></main>
+
+  <footer class="footer">
+    <svg class="footer-stroke" viewBox="0 0 1000 40" preserveAspectRatio="none">
+      <path d="M0 24 C150 4 300 38 500 18 S850 36 1000 12" fill="none" stroke="url(#gPK)" stroke-width="10"
+        stroke-linecap="round" filter="url(#rough2)" />
+    </svg>
+    <p>made with claude :) · <a href="#/admin" id="admin-link" class="admin-link">admin</a></p>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js?v=5"></script>
+  <script src="app.js?v=6"></script>
+</body>
+
+</html>
