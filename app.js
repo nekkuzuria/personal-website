@@ -109,6 +109,8 @@ function resize(file, max = 1400) {
 /* ---------- helpers ---------- */
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const safeUrl = u => /^(https?:|mailto:|#)/i.test(String(u || '').trim()) ? String(u).trim() : '';
+// add https:// when the user typed a bare domain like github.com/foo
+const normUrl = u => { u = String(u || '').trim(); return !u ? '' : safeUrl(u) || (/^[\w.-]+\.[a-z]{2,}(\/|$|\?|#)/i.test(u) ? 'https://' + u : ''); };
 const normalizeSong = s => s && s.title ? {
   title: s.title || '',
   artist: s.artist || '',
@@ -176,23 +178,60 @@ const projectsSoon = `
 <div class="card soon"><div class="big"><span class="brush blue">coming soon</span></div>
 <p>coming soon ✿</p></div>`;
 
+const PLACEHOLDER_IMG = 'assets/project-placeholder.jpg';
+const linksOf = e => {
+  const arr = Array.isArray(e.links) ? e.links : [];
+  const all = e.link ? [e.link, ...arr] : arr;
+  return [...new Set(all.map(normUrl).filter(Boolean))];
+};
+const host = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
+const badges = urls => urls.length ? `<div class="link-badges">${urls.map(u => `<a class="link-badge" href="${esc(u)}" target="_blank" rel="noopener">${esc(host(u))} ↗</a>`).join('')}</div>` : '';
+
 const projectCard = p => {
-  const link = safeUrl(p.link);
   return `
 <article class="card project-card fade" id="project-${esc(p.id)}">
-  ${p.image ? `<img class="project-img" src="${esc(p.image)}" alt="">` : ''}
+  <a href="#/project/${esc(p.id)}">${p.image ? `<img class="project-img" src="${esc(p.image)}" alt="">` : `<div class="project-img project-thumb"></div>`}</a>
   <div class="project-body">
     ${p.tag ? `<span class="tag">${esc(p.tag)}</span>` : ''}
-    <h3>${esc(p.title)}</h3>
-    ${p.description ? `<p>${esc(p.description)}</p>` : ''}
+    <h3><a href="#/project/${esc(p.id)}">${esc(p.title)}</a></h3>
+    ${p.description ? `<p>${esc(p.description.length > 140 ? p.description.slice(0, 140) + '…' : p.description)}</p>` : ''}
+    ${badges(linksOf(p))}
     <div class="project-actions">
-      ${link ? `<a class="btn primary small" href="${esc(link)}" target="_blank" rel="noopener">view project ↗</a>` : ''}
-      ${isAdmin() && sb ? `<a class="btn small" href="#/project/${esc(p.id)}">edit</a>
+      <a class="btn small" href="#/project/${esc(p.id)}">details</a>
+      ${isAdmin() && sb ? `<a class="btn small" href="#/project-edit/${esc(p.id)}">edit</a>
       <button class="btn small danger" type="button" onclick="delProject(${Number(p.id)})">delete</button>` : ''}
     </div>
   </div>
 </article>`;
 };
+
+function projectDetail(p) {
+  if (!p) return `<div class="empty">project not found. <a href="#/projects" style="text-decoration:underline">back to projects</a></div>`;
+  return `
+  <article class="article fade">
+    <a class="back" href="#/projects" id="back-projects">← back to projects</a>
+    <h1>${esc(p.title)}</h1>
+    <div class="meta">${p.tag ? `<span class="tag">${esc(p.tag)}</span>` : ''}${p.created_at ? fmt(p.created_at.slice(0, 10)) : ''}</div>
+    ${p.image ? `<img class="cover" src="${esc(p.image)}" alt="">` : ''}
+    ${p.description ? `<div class="content"><p>${esc(p.description).replace(/\n/g, '<br>')}</p></div>` : ''}
+    ${badges(linksOf(p))}
+    ${isAdmin() && sb ? `<div class="cta"><a class="btn small" href="#/project-edit/${esc(p.id)}">edit</a>
+    <button class="btn small danger" type="button" onclick="delProject(${Number(p.id)})">delete</button></div>` : ''}
+  </article>`;
+}
+
+function logDetail(e) {
+  if (!e) return `<div class="empty">log not found. <a href="#/study" style="text-decoration:underline">back to study log</a></div>`;
+  return `
+  <article class="article fade">
+    <a class="back" href="#/study" id="back-study">← back to study log</a>
+    <h1>${esc(e.topic)}</h1>
+    <div class="meta">${e.tag ? `<span class="tag">${esc(e.tag)}</span>` : ''}${fmt(e.date)}${e.mins ? ' · ' + e.mins + ' min' : ''}</div>
+    ${e.image ? `<img class="cover" src="${esc(e.image)}" alt="">` : ''}
+    ${e.notes ? `<div class="content"><p>${esc(e.notes).replace(/\n/g, '<br>')}</p></div>` : ''}
+    ${badges(linksOf(e))}
+  </article>`;
+}
 
 const projectGrid = list => list.length
   ? `<div class="grid">${list.map(projectCard).join('')}</div>`
@@ -292,7 +331,7 @@ function home({ posts, study: logs, song, projects: projectList }) {
   ${about()}
   <section class="block" id="projects">
     <div class="row"><div><h2 class="sec-title">projects</h2><p class="sec-sub">things I'm building</p></div>
-    ${isAdmin() && sb ? '<a class="btn small" href="#/project/new" id="home-add-project">+ add project</a>' : ''}</div>
+    ${isAdmin() && sb ? '<a class="btn small" href="#/project-edit/new" id="home-add-project">+ add project</a>' : ''}</div>
     ${projectGrid(projectList.slice(0, 3))}
   </section>
   ${studyPreview(logs)}
@@ -333,7 +372,7 @@ function projectsView(list) {
   return `
   <section class="block fade">
     <div class="row"><div><h1 class="sec-title">projects</h1><p class="sec-sub">things I'm building</p></div>
-    ${isAdmin() && sb ? '<a class="btn primary small" href="#/project/new" id="projects-add">+ add project</a>' : ''}</div>
+    ${isAdmin() && sb ? '<a class="btn primary small" href="#/project-edit/new" id="projects-add">+ add project</a>' : ''}</div>
     ${CONFIGURED ? '' : notConfigured}
     ${projectGrid(list)}
   </section>`;
@@ -555,7 +594,7 @@ function bindProjectEditor() {
 
 async function delProject(id) {
   if (!confirm('Delete this project?')) return;
-  if (await api.deleteProject(id)) route();
+  if (await api.deleteProject(id)) { if (location.hash === '#/projects') route(); else location.hash = '#/projects'; }
 }
 
 /* ---------- song (public read, admin write) ---------- */
@@ -654,10 +693,10 @@ function study() {
       <div>${byDay[d].map(e => `
         <div class="card entry" id="entry-${e.id}">
           <div class="meta">${e.tag ? `<span class="tag">${esc(e.tag)}</span>` : ''}${e.mins ? e.mins + ' min' : ''}</div>
-          <h3>${esc(e.topic)}</h3>
-          ${e.notes ? `<p>${esc(e.notes)}</p>` : ''}
+          <h3><a href="#/log/${e.id}">${esc(e.topic)}</a></h3>
+          ${e.notes ? `<p>${esc(e.notes.length > 160 ? e.notes.slice(0, 160) + '…' : e.notes)}</p>` : ''}
           ${e.image ? `<img class="entry-img" src="${esc(e.image)}" alt="">` : ''}
-          ${safeUrl(e.link) ? `<p><a class="yt" href="${esc(safeUrl(e.link))}" target="_blank" rel="noopener">open link ↗</a></p>` : ''}
+          ${badges(linksOf(e))}
           ${admin ? `<button class="x" title="delete" onclick="delStudy(${e.id})">✕</button>` : ''}
         </div>`).join('')}</div></div>`).join('');
   const empty = cal.sel ? `<div class="empty">no log on ${fmt(cal.sel)}</div>` : '<div class="empty">nothing logged yet ✿</div>';
@@ -669,7 +708,7 @@ function study() {
       </div>
       <textarea id="s-notes" placeholder="description / notes (optional)"></textarea>
       <div class="frow">
-        <input type="text" id="s-link" placeholder="link (optional) https://…" />
+        <input type="text" id="s-link" placeholder="links (separate with space or comma)" />
         <input type="file" id="s-image" accept="image/*" />
       </div>
       <div class="frow">
@@ -716,7 +755,7 @@ function bindStudy() {
     e.preventDefault();
     const v = id => document.getElementById(id).value.trim();
     if (!v('s-topic')) return;
-    const row = { date: v('s-date') || today(), topic: v('s-topic'), notes: v('s-notes'), link: v('s-link'), image: '', tag: v('s-tag'), mins: v('s-mins') ? +v('s-mins') : null };
+    const row = { date: v('s-date') || today(), topic: v('s-topic'), notes: v('s-notes'), links: v('s-link').split(/[\s,]+/).map(normUrl).filter(Boolean), image: '', tag: v('s-tag'), mins: v('s-mins') ? +v('s-mins') : null };
     const f = document.getElementById('s-image').files[0];
     if (f) { const u = await api.upload(f); if (!u) return; row.image = u; }
     if (await api.addStudy(row)) { studyData = await api.study(); refreshStudy(); }
@@ -750,7 +789,7 @@ function admin() {
   else if (isAdmin()) body = `
     <p class="sec-sub">signed in as ${esc(session.user.email)}</p>
     <div class="cta"><a class="btn primary" href="#/write" id="adm-write">+ new post</a>
-      <a class="btn" href="#/project/new" id="adm-project">+ new project</a>
+      <a class="btn" href="#/project-edit/new" id="adm-project">+ new project</a>
       <a class="btn" href="#/song-edit" id="adm-song">edit song</a>
       <a class="btn" href="#/study" id="adm-study">study log</a>
       <button class="btn" id="adm-logout" onclick="logout()">sign out</button></div>`;
@@ -759,8 +798,7 @@ function admin() {
     <div class="cta"><button class="btn" onclick="logout()">sign out</button></div>`;
   else body = `
     <p class="sec-sub">only the site owner can sign in. Everyone else can read ✿</p>
-    <div class="cta"><button class="btn primary" id="login-google" onclick="login('google')">continue with Google</button>
-      <button class="btn" id="login-github" onclick="login('github')">continue with GitHub</button></div>`;
+    <div class="cta"><button class="btn primary" id="login-github" onclick="login('github')">continue with GitHub</button></div>`;
   return `<section class="block fade"><h1 class="sec-title"><span class="brush">admin</span></h1>${body}</section>`;
 }
 
@@ -774,7 +812,14 @@ async function route() {
   let html, nav = page || 'home', after = null;
   switch (page) {
     case 'projects': html = projectsView(await api.projects()); break;
-    case 'project': {
+    case 'project': nav = 'projects'; html = projectDetail(await api.project(arg)); break;
+    case 'log': {
+      nav = 'study';
+      const all = await api.study();
+      html = logDetail(all.find(x => String(x.id) === arg));
+      break;
+    }
+    case 'project-edit': {
       nav = 'projects';
       if (isAdmin() && sb) {
         const p = arg === 'new' ? null : await api.project(arg);
