@@ -58,9 +58,10 @@ const api = {
     return data;
   },
   async saveProject(p) {
-    const { error } = p.id
-      ? await sb.from('projects').update(p).eq('id', p.id)
-      : await sb.from('projects').insert(p);
+    let res;
+    if (p.id) { const { id, ...rest } = p; res = await sb.from('projects').update(rest).eq('id', id); }
+    else res = await sb.from('projects').insert(p);
+    const error = res.error;
     return error ? fail(error) : true;
   },
   async deleteProject(id) { const { error } = await sb.from('projects').delete().eq('id', id); return error ? fail(error) : true; },
@@ -187,6 +188,7 @@ const linksOf = e => {
 const host = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
 const badges = urls => urls.length ? `<div class="link-badges">${urls.map(u => `<a class="link-badge" href="${esc(u)}" target="_blank" rel="noopener">${esc(host(u))} ↗</a>`).join('')}</div>` : '';
 
+const techBadges = t => Array.isArray(t) && t.length ? `<div class="link-badges">${t.map(x => `<span class="tech-badge">${esc(x)}</span>`).join('')}</div>` : '';
 const projectCard = p => {
   return `
 <article class="card project-card fade" id="project-${esc(p.id)}">
@@ -194,7 +196,8 @@ const projectCard = p => {
   <div class="project-body">
     ${p.tag ? `<span class="tag">${esc(p.tag)}</span>` : ''}
     <h3><a href="#/project/${esc(p.id)}">${esc(p.title)}</a></h3>
-    ${p.description ? `<p>${esc(p.description.length > 140 ? p.description.slice(0, 140) + '…' : p.description)}</p>` : ''}
+    ${p.description ? `<p class="project-desc">${esc(p.description)}</p>` : ''}
+    ${techBadges(p.techstack)}
     ${badges(linksOf(p))}
     <div class="project-actions">
       <a class="btn small" href="#/project/${esc(p.id)}">details</a>
@@ -213,7 +216,8 @@ function projectDetail(p) {
     <h1>${esc(p.title)}</h1>
     <div class="meta">${p.tag ? `<span class="tag">${esc(p.tag)}</span>` : ''}${p.created_at ? fmt(p.created_at.slice(0, 10)) : ''}</div>
     ${p.image ? `<img class="cover" src="${esc(p.image)}" alt="">` : ''}
-    ${p.description ? `<div class="content"><p>${esc(p.description).replace(/\n/g, '<br>')}</p></div>` : ''}
+    ${p.description ? `<div class="content"><p class="project-desc">${esc(p.description)}</p></div>` : ''}
+    ${techBadges(p.techstack)}
     ${badges(linksOf(p))}
     ${isAdmin() && sb ? `<div class="cta"><a class="btn small" href="#/project-edit/${esc(p.id)}">edit</a>
     <button class="btn small danger" type="button" onclick="delProject(${Number(p.id)})">delete</button></div>` : ''}
@@ -553,6 +557,8 @@ function projectEditor(existing) {
     </div>
     <label for="p-description">description</label>
     <textarea id="p-description" placeholder="What does this project do?"></textarea>
+    <label for="p-tech">tech stack <span class="hint">· separate with commas</span></label>
+    <input type="text" id="p-tech" placeholder="Java, Spring Boot, PostgreSQL" />
     <label>project image (optional)</label>
     <input type="file" accept="image/*" id="p-image" />
     <div id="p-image-prev"></div>
@@ -567,6 +573,7 @@ function bindProjectEditor() {
   $('p-tag').value = projectDraft.tag || '';
   $('p-link').value = projectDraft.link || '';
   $('p-description').value = projectDraft.description || '';
+  $('p-tech').value = (projectDraft.techstack || []).join(', ');
   const prev = () => $('p-image-prev').innerHTML = projectDraft.image
     ? `<img src="${esc(projectDraft.image)}" style="max-height:200px;border-radius:12px;margin-top:8px" alt="">` : '';
   prev();
@@ -574,6 +581,7 @@ function bindProjectEditor() {
   $('p-tag').oninput = e => projectDraft.tag = e.target.value;
   $('p-link').oninput = e => projectDraft.link = e.target.value;
   $('p-description').oninput = e => projectDraft.description = e.target.value;
+  $('p-tech').oninput = e => projectDraft.techstack = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
   $('p-image').onchange = async e => {
     const file = e.target.files[0];
     e.target.value = '';
