@@ -333,3 +333,11 @@ html{scroll-padding-top:70px}
 .project-thumb{aspect-ratio:16/9;height:auto;background:linear-gradient(135deg,#f0eaff,#ffeaf4 55%,#e8f0ff)}
 
 .project-desc{white-space:pre-line}.tech-badge{display:inline-block;padding:4px 12px;border-radius:999px;background:#ffeaf4;color:#a0346e;border:1.5px solid #ffc2df;font-size:.8rem}
+
+.project-card .project-desc{display:-webkit-box;-webkit-line-clamp:4;line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis}
+
+img.project-img,img.entry-img,img.cover{cursor:zoom-in}.lightbox{position:fixed;inset:0;z-index:999;background:rgba(43,39,64,.82);display:flex;align-items:center;justify-content:center;padding:24px;cursor:zoom-out}.lightbox img{max-width:100%;max-height:100%;object-fit:contain;border-radius:12px}
+
+img.project-img,img.entry-img{cursor:pointer}.entry-img{display:block}
+
+.entry .entry-img{width:220px;max-width:100%;height:110px;object-fit:cover;border-radius:10px;margin:8px 0}

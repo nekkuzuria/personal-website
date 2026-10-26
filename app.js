@@ -45,6 +45,7 @@ const api = {
     return data;
   },
   async addStudy(e) { const { error } = await sb.from('study').insert(e); return error ? fail(error) : true; },
+  async updateStudy(id, e) { const { error } = await sb.from('study').update(e).eq('id', id); return error ? fail(error) : true; },
   async deleteStudy(id) { const { error } = await sb.from('study').delete().eq('id', id); return error ? fail(error) : true; },
   async projects() {
     if (!sb) return [];
@@ -234,7 +235,62 @@ function logDetail(e) {
     ${e.image ? `<img class="cover" src="${esc(e.image)}" alt="">` : ''}
     ${e.notes ? `<div class="content"><p>${esc(e.notes).replace(/\n/g, '<br>')}</p></div>` : ''}
     ${badges(linksOf(e))}
+    ${isAdmin() && sb ? `<div class="cta"><a class="btn small" href="#/log-edit/${e.id}">edit</a></div>` : ''}
   </article>`;
+}
+
+let logDraft = null;
+function logEditor(e) {
+  logDraft = { ...e, links: linksOf(e) };
+  return `
+  <div class="editor fade">
+    <h1 class="sec-title"><span class="brush pink">edit study log</span></h1>
+    <label for="l-topic">topic</label><input type="text" id="l-topic" />
+    <div class="frow2">
+      <div><label for="l-date">date</label><input type="date" id="l-date" /></div>
+      <div><label for="l-mins">minutes</label><input type="number" id="l-mins" min="0" /></div>
+    </div>
+    <label for="l-tag">tag</label><input type="text" id="l-tag" />
+    <label for="l-notes">description</label><textarea id="l-notes"></textarea>
+    <label for="l-links">links <span class="hint">· separate with space or comma</span></label><input type="text" id="l-links" />
+    <label>image (optional)</label>
+    <input type="file" accept="image/*" id="l-image" />
+    <div id="l-image-prev"></div>
+    <div class="cta"><button class="btn primary" id="l-save" type="button">save changes</button>
+    <a class="btn" href="#/log/${e.id}">cancel</a></div>
+  </div>`;
+}
+
+function bindLogEditor() {
+  const $ = id => document.getElementById(id);
+  $('l-topic').value = logDraft.topic || '';
+  $('l-date').value = logDraft.date || today();
+  $('l-mins').value = logDraft.mins ?? '';
+  $('l-tag').value = logDraft.tag || '';
+  $('l-notes').value = logDraft.notes || '';
+  $('l-links').value = logDraft.links.join(' ');
+  const prev = () => $('l-image-prev').innerHTML = logDraft.image
+    ? `<img src="${esc(logDraft.image)}" style="max-height:160px;border-radius:12px;margin-top:8px" alt=""><br><button class="btn small" type="button" id="l-image-remove">remove image</button>` : '';
+  const wire = () => { prev(); const r = $('l-image-remove'); if (r) r.onclick = () => { logDraft.image = ''; wire(); }; };
+  wire();
+  $('l-image').onchange = async ev => {
+    const f = ev.target.files[0]; ev.target.value = '';
+    if (!f) return;
+    const u = await api.upload(f);
+    if (u) { logDraft.image = u; wire(); }
+  };
+  $('l-save').onclick = async () => {
+    if (!$('l-topic').value.trim()) return alert('Please add a topic ✿');
+    const row = {
+      topic: $('l-topic').value.trim(), date: $('l-date').value || today(),
+      mins: $('l-mins').value ? +$('l-mins').value : null, tag: $('l-tag').value.trim(),
+      notes: $('l-notes').value.trim(), image: logDraft.image || '', link: '',
+      links: $('l-links').value.split(/[\s,]+/).map(normUrl).filter(Boolean)
+    };
+    const btn = $('l-save'); btn.disabled = true; btn.textContent = 'saving…';
+    if (await api.updateStudy(logDraft.id, row)) location.hash = '#/log/' + logDraft.id;
+    else { btn.disabled = false; btn.textContent = 'save changes'; }
+  };
 }
 
 const projectGrid = list => list.length
@@ -703,8 +759,10 @@ function study() {
           <div class="meta">${e.tag ? `<span class="tag">${esc(e.tag)}</span>` : ''}${e.mins ? e.mins + ' min' : ''}</div>
           <h3><a href="#/log/${e.id}">${esc(e.topic)}</a></h3>
           ${e.notes ? `<p>${esc(e.notes.length > 160 ? e.notes.slice(0, 160) + '…' : e.notes)}</p>` : ''}
-          ${e.image ? `<img class="entry-img" src="${esc(e.image)}" alt="">` : ''}
+          ${e.image ? `<a href="#/log/${e.id}"><img class="entry-img" src="${esc(e.image)}" alt=""></a>` : ''}
           ${badges(linksOf(e))}
+          <a class="btn small" href="#/log/${e.id}">details</a>
+          ${admin ? `<a class="btn small" href="#/log-edit/${e.id}">edit</a>` : ''}
           ${admin ? `<button class="x" title="delete" onclick="delStudy(${e.id})">✕</button>` : ''}
         </div>`).join('')}</div></div>`).join('');
   const empty = cal.sel ? `<div class="empty">no log on ${fmt(cal.sel)}</div>` : '<div class="empty">nothing logged yet ✿</div>';
@@ -821,6 +879,15 @@ async function route() {
   switch (page) {
     case 'projects': html = projectsView(await api.projects()); break;
     case 'project': nav = 'projects'; html = projectDetail(await api.project(arg)); break;
+    case 'log-edit': {
+      nav = 'study';
+      if (isAdmin() && sb) {
+        const e = (await api.study()).find(x => String(x.id) === arg);
+        html = e ? logEditor(e) : logDetail(null);
+        if (e) after = bindLogEditor;
+      } else html = needAdmin;
+      break;
+    }
     case 'log': {
       nav = 'study';
       const all = await api.study();
@@ -872,3 +939,18 @@ if (sb) {
 } else route();
 
 window.addEventListener('scroll', () => document.querySelector('.nav').classList.toggle('scrolled', window.scrollY > 8), { passive: true });
+
+/* ---------- image lightbox ---------- */
+document.addEventListener("click", e => {
+  const img = e.target.closest(".article img.cover");
+  if (!img) return;
+  e.preventDefault();
+  const box = document.createElement("div");
+  box.className = "lightbox";
+  box.innerHTML = `<img src="${esc(img.src)}" alt="">`;
+  const close = () => { box.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = ev => { if (ev.key === "Escape") close(); };
+  box.onclick = close;
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(box);
+});
